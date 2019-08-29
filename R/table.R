@@ -27,6 +27,7 @@
 #'   expanded to a vector of individual letters, e.g. \code{'clc'} becomes
 #'   \code{c('c', 'l', 'c')}, unless the output format is LaTeX.
 #' @param caption The table caption.
+#' @param summary The table summary (essentially alt-text) for html format only.
 #' @param label The table reference label. By default, the label is obtained
 #'   from \code{knitr::\link{opts_current}$get('label')}.
 #' @param format.args A list of arguments to be passed to \code{\link{format}()}
@@ -84,7 +85,7 @@
 #' # can also set options(knitr.table.format = 'html') so that the output is HTML
 kable = function(
   x, format, digits = getOption('digits'), row.names = NA, col.names = NA,
-  align, caption = NULL, label = NULL, format.args = list(), escape = TRUE, ...
+  align, caption = NULL,  summary = NULL, label = NULL, format.args = list(), escape = TRUE, ...
 ) {
 
   # determine the table format
@@ -123,10 +124,11 @@ kable = function(
     res = unlist(lapply(res, one_string))
     res = if (format == 'latex') {
       kable_latex_caption(res, caption)
-    } else if (format == 'html' || (format == 'pandoc' && is_html_output())) kable_html(
-      matrix(paste0('\n\n', res, '\n\n'), 1), caption = caption, escape = FALSE,
-      table.attr = 'class="kable_wrapper"'
-    ) else {
+    } else if (format == 'html' || (format == 'pandoc' && is_html_output())) {
+      kable_html(matrix(paste0('\n\n', res, '\n\n'), 1), caption = caption, escape = FALSE,
+                summary = summary, rn = row.names, table.attr = 'class="kable_wrapper"'
+                )
+    } else {
       res = paste(res, collapse = '\n\n')
       if (format == 'pandoc') kable_pandoc_caption(res, caption) else res
     }
@@ -167,7 +169,8 @@ kable = function(
   attr(x, 'align') = align
   res = do.call(
     paste('kable', format, sep = '_'),
-    list(x = x, caption = caption, escape = escape, ...)
+    list(x = x, caption = caption, escape = escape,
+         summary = summary, rn = row.names, ...)
   )
   structure(res, format = format, class = 'knitr_kable')
 }
@@ -278,7 +281,8 @@ kable_latex_caption = function(x, caption) {
   ), collapse = '')
 }
 
-kable_html = function(x, table.attr = '', caption = NULL, escape = TRUE, ...) {
+kable_html = function(x, table.attr = '', caption = NULL, escape = TRUE,
+                      summary = NULL, rn = NULL, ...) {
   table.attr = trimws(table.attr)
   # need a space between <table and attributes
   if (nzchar(table.attr)) table.attr = paste('', table.attr)
@@ -287,19 +291,31 @@ kable_html = function(x, table.attr = '', caption = NULL, escape = TRUE, ...) {
   }
   if (identical(caption, NA)) caption = NULL
   cap = if (length(caption)) sprintf('\n<caption>%s</caption>', caption) else ''
+  if (identical(summary, NA)) summary = NULL
+  summ = if (length(summary)) sprintf('<summary>%s</summary>', summary) else ''
   if (escape) x = escape_html(x)
   one_string(c(
     sprintf('<table%s>%s', table.attr, cap),
+    sprintf('%s', summ),
     if (!is.null(cn <- colnames(x))) {
       if (escape) cn = escape_html(cn)
       c(' <thead>', '  <tr>', sprintf('   <th%s> %s </th>', align, cn), '  </tr>', ' </thead>')
     },
     '<tbody>',
+    if (rn) {
+    paste(
+          '  <tr>\n',
+          apply(x, 1, function(z) paste(sprintf('   <th scope="row" %s> %s </th>', align[1], z[1]),
+                                         paste(sprintf('   <td%s> %s </td>', align[-1], z[-1]), collapse = "\n"),
+                                   '  </tr>', sep = '\n')
+    ))
+  } else {
     paste(
       '  <tr>',
       apply(x, 1, function(z) one_string(sprintf('   <td%s> %s </td>', align, z))),
       '  </tr>', sep = '\n'
-    ),
+    )
+  },
     '</tbody>',
     '</table>'
   ))
